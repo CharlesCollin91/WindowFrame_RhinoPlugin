@@ -10,7 +10,6 @@ __version__ = "1.11"
 # =============================================================================
 import os
 import sys
-import json
 import time
 import math
 import logging
@@ -1058,7 +1057,7 @@ def _member_rail(rail, da, db, b0, b1, ps, pe, n, sign, ctx, stations):
 
 def _member_ring(contour, da, db, b0, b1, n, sign, ctx):
     """Closed smooth outline without corners: two half members cut square at the seam and mid point.
-    (A periodic ruled tube left its 4 seams misaligned and never closed - test set-1 #17.)"""
+    (A periodic ruled tube left its 4 seams misaligned and never closed.)"""
     dom = contour.Domain
     t0, tm = dom.ParameterAt(0.25), dom.ParameterAt(0.75)
     halves = contour.Split(net_list(System.Double, [t0, tm]))   # one cut on a closed curve = 1 piece; two cuts = 2
@@ -1524,238 +1523,6 @@ def frame_for_contour(contour, settings, ctx):
 
 
 # =============================================================================
-# TEST  (set-1 inputs, option sweep, automatic checks - pure geometry, no document)
-# =============================================================================
-TEST_LAYER = PLUGIN_NAME + "_TEST"
-TEST_CELL = 3500.0          # mm between grid cells (columns and rows)
-TEST_WIDTH_MM = 70.0
-TEST_DEPTH_MM = 100.0
-
-
-def test_combos():
-    """27 combinations: offset x output x depth direction (column order)."""
-    out = []
-    for wm in WIDTH_MODES:
-        for om in OUTPUT_MODES:
-            for dm in DEPTH_MODES:
-                out.append((wm, om, dm))
-    return out
-
-
-def _pt(x, y, z=0.0):
-    return rg.Point3d(float(x), float(y), float(z))
-
-
-def _poly(pts, closed=True):
-    pts = list(pts) + ([pts[0]] if closed else [])
-    return rg.PolylineCurve(net_list(rg.Point3d, pts))
-
-
-def _interp(pts, periodic):
-    if periodic:
-        return closed_interp(pts)
-    return rg.Curve.CreateInterpolatedCurve(net_list(rg.Point3d, pts), 3)
-
-
-def _arc3(a, m, b):
-    return rg.ArcCurve(rg.Arc(a, m, b))
-
-
-def _join1(curves, tol):
-    j = join_curves(curves, tol * 2.0, True)
-    return j[0] if len(j) == 1 else None
-
-
-def build_set1(tol):
-    """Set-1 test inputs (see the skill note geometry-inputs.md). Returns a list of case dicts:
-    id, name, geoms, join (close_open option), expect {frames, members (Mitered objects), sides (planar polygon)}."""
-    cases = []
-
-    def add(cid, name, geoms, join=True, frames=1, members=None, sides=None):
-        cases.append({"id": cid, "name": name, "geoms": [g for g in geoms if g is not None],
-                      "join": join, "expect": {"frames": frames, "members": members, "sides": sides},
-                      "built": len([g for g in geoms if g is not None]) == len(geoms)})
-
-    rect = [_pt(0, 0), _pt(1000, 0), _pt(1000, 1500), _pt(0, 1500)]
-    add("01", "rectangle flat", [_poly(rect)], members=4, sides=4)
-    add("02", "rectangle vertical", [_poly([_pt(0, 0, 0), _pt(1000, 0, 0), _pt(1000, 0, 1500), _pt(0, 0, 1500)])],
-        members=4, sides=4)
-    ortho = [_pt(0, 0), _pt(1200, 0), _pt(1200, 500), _pt(800, 500), _pt(800, 900), _pt(1200, 900),
-             _pt(1200, 1400), _pt(0, 1400), _pt(0, 1000), _pt(300, 1000), _pt(300, 600), _pt(0, 600)]
-    add("03", "orthogonal 12 sides flat", [_poly(ortho)], members=12, sides=12)
-    rot = _poly(ortho)
-    c = rot.GetBoundingBox(True).Center
-    for ang, axis in ((23.0, rg.Vector3d.XAxis), (-37.0, rg.Vector3d.YAxis), (51.0, rg.Vector3d.ZAxis)):
-        rot.Transform(rg.Transform.Rotation(math.radians(ang), axis, c))
-    add("04", "orthogonal 12 sides rotated XYZ", [rot], members=12, sides=12)
-    add("05", "rectangle vertical, 1 vertex off plane",
-        [_poly([_pt(0, 0, 0), _pt(1000, 0, 0), _pt(1000, 300, 1500), _pt(0, 0, 1500)])], members=4)
-    add("06", "rectangle flat, open (1 side incomplete)",
-        [_poly([_pt(0, 0), _pt(1000, 0), _pt(1000, 1500), _pt(0, 1500), _pt(0, 700)], closed=False)], members=4)
-    blob = [(800, 0), (650, 45), (900, 90), (700, 135), (850, 180), (600, 225), (950, 270), (700, 315)]
-    blob_pts = [_pt(r * math.cos(math.radians(a)), r * math.sin(math.radians(a))) for r, a in blob]
-    add("07", "organic closed planar", [_interp(blob_pts, True)], members=2)
-    lifted = list(blob_pts)
-    lifted[2] = _pt(lifted[2].X, lifted[2].Y, 400)
-    add("08", "organic closed non-planar", [_interp(lifted, True)], members=2)
-    R, a0, a1 = 2000.0, math.radians(-20), math.radians(20)
-
-    def cyl(a, z, r=R):
-        return _pt(r * math.cos(a), r * math.sin(a), z)
-    cyl_curves = [_arc3(cyl(a0, 0), cyl(0, 0), cyl(a1, 0)), rg.LineCurve(cyl(a1, 0), cyl(a1, 1500)),
-                  _arc3(cyl(a1, 1500), cyl(0, 1500), cyl(a0, 1500)), rg.LineCurve(cyl(a0, 1500), cyl(a0, 0))]
-    add("09", "rectangle bent on a cylinder (2 lines + 2 arcs)", [_join1(cyl_curves, tol)], members=4)
-    b0, b1 = math.radians(-25), math.radians(25)
-    bottom = _interp([cyl(b0, 0), cyl(-0.15, 80), cyl(0.2, -60), cyl(b1, 0)], False)
-    top = _interp([cyl(b1, 1600, 2100), cyl(0.1, 1700, 2100), cyl(-0.3, 1550, 2100), cyl(b0, 1600, 2100)], False)
-    sides10 = [bottom, rg.LineCurve(bottom.PointAtEnd, top.PointAtStart), top,
-               rg.LineCurve(top.PointAtEnd, bottom.PointAtStart)]
-    add("10", "4 separate curves (2 complex), join ON", sides10, join=True, members=4)
-    add("10b", "3 separate curves forming a U, close OFF (open frame)", [c.DuplicateCurve() for c in sides10[:3]],
-        join=False, frames=1, members=3)
-    add("11", "surface flat rectangle",
-        [rg.Brep.CreateFromCornerPoints(_pt(0, 0, 0), _pt(1000, 0, 0), _pt(1000, 0, 1500), _pt(0, 0, 1500), tol)],
-        members=4, sides=4)
-    add("12", "surface rectangle, 1 vertex raised",
-        [rg.Brep.CreateFromCornerPoints(_pt(0, 0, 0), _pt(1000, 0, 0), _pt(1000, 300, 1500), _pt(0, 0, 1500), tol)],
-        members=4)
-    irregular = _poly([_pt(0, 0, 0), _pt(1300, 0, 0), _pt(1500, 0, 600), _pt(1200, 0, 1400), _pt(500, 0, 1600),
-                       _pt(-100, 0, 1100), _pt(-200, 0, 400)])
-    poly5 = None
-    planar = rg.Brep.CreatePlanarBreps(net_list(rg.Curve, [irregular]), tol)
-    if planar:
-        cuts = [rg.LineCurve(_pt(x0, 0, -500), _pt(x1, 0, 2100)) for x0, x1 in ((150, 350), (500, 450), (800, 950), (1150, 1000))]
-        try:
-            poly5 = planar[0].Faces[0].Split(net_list(rg.Curve, cuts), tol)
-        except Exception:
-            log_exc("set-1 #13 split")
-    log("TEST", f"set-1 #13 faces = {None if poly5 is None else poly5.Faces.Count}")
-    add("13", "planar polysurface, 5 irregular faces (7-sided outline)", [poly5], members=7, sides=7)
-    flat = rg.Mesh.CreateFromPlane(rg.Plane.WorldXY, rg.Interval(0, 1000), rg.Interval(0, 1000), 10, 10)
-    add("14a", "mesh 10x10 flat", [flat], members=4, sides=4)
-    wavy = rg.Mesh.CreateFromPlane(rg.Plane.WorldXY, rg.Interval(0, 1000), rg.Interval(0, 1000), 10, 10)
-    for i in range(wavy.Vertices.Count):
-        v = wavy.Vertices[i]
-        wavy.Vertices.SetVertex(i, float(v.X), float(v.Y),
-                                80.0 * math.sin(v.X / 1000.0 * 2 * math.pi) * math.cos(v.Y / 1000.0 * math.pi))
-    add("14b", "mesh 10x10 wavy", [wavy], members=4)
-    arch = [rg.LineCurve(_pt(0, 0, 0), _pt(1000, 0, 0)), rg.LineCurve(_pt(1000, 0, 0), _pt(1000, 0, 1200)),
-            _arc3(_pt(1000, 0, 1200), _pt(500, 0, 1700), _pt(0, 0, 1200)), rg.LineCurve(_pt(0, 0, 1200), _pt(0, 0, 0))]
-    add("15", "arched window (arc tangent to jambs)", [_join1(arch, tol)], members=4)
-    fillet = None
-    try:
-        fillet = rg.Curve.CreateFilletCornersCurve(_poly(rect), 150.0, tol, math.radians(1.0))
-    except Exception:
-        log_exc("CreateFilletCornersCurve")
-    add("16", "rectangle with rounded corners", [fillet])
-    add("17", "circle", [rg.ArcCurve(rg.Circle(rg.Plane.WorldXY, 600.0))], members=2)
-    outer = _poly([_pt(0, 0, 0), _pt(1000, 0, 0), _pt(1000, 0, 1500), _pt(0, 0, 1500)])
-    hole = rg.ArcCurve(rg.Circle(rg.Plane(_pt(500, 0, 750), rg.Vector3d.XAxis, rg.Vector3d.ZAxis), 300.0))
-    holed = rg.Brep.CreatePlanarBreps(net_list(rg.Curve, [outer, hole]), tol)
-    add("18", "planar surface with a hole", [holed[0] if holed else None], members=4, sides=4)
-    return cases
-
-
-def bbox_of(geoms):
-    """Union of bounding boxes, built from coordinates (no in-place struct mutation under pythonnet)."""
-    lo, hi = [None] * 3, [None] * 3
-    for g in geoms:
-        b = g.GetBoundingBox(True)
-        if not b.IsValid:
-            continue
-        for k, (mn, mx) in enumerate(((b.Min.X, b.Max.X), (b.Min.Y, b.Max.Y), (b.Min.Z, b.Max.Z))):
-            lo[k] = mn if lo[k] is None else min(lo[k], mn)
-            hi[k] = mx if hi[k] is None else max(hi[k], mx)
-    if lo[0] is None:
-        return None
-    return rg.BoundingBox(rg.Point3d(*lo), rg.Point3d(*hi))
-
-
-def _volume(brep):
-    try:
-        vmp = rg.VolumeMassProperties.Compute(brep)
-        return abs(vmp.Volume) if vmp is not None else None
-    except Exception:
-        return None
-
-
-def run_case(case, settings, ctx):
-    """Run the real pipeline on in-memory copies. Returns a result dict (no document change)."""
-    items = [(f"{case['id']}.{k}", g.Duplicate()) for k, g in enumerate(case["geoms"])]
-    res = {"frames": [], "skips": {}, "records": 0}
-    records, skips = collect_contours(items, settings, ctx.tol)
-    res["skips"] = skips
-    res["records"] = len(records)
-    for rec in records:
-        fr = {"keys": rec["keys"], "kind": rec["kind"], "closed": rec["crv"].IsClosed,
-              "length": rec["crv"].GetLength(), "breps": [], "notes": [], "error": None, "trace": None}
-        try:
-            fr["breps"], fr["notes"] = frame_for_contour(rec["crv"], settings, ctx)
-        except FrameError as ex:
-            fr["error"] = str(ex)
-        except Exception as ex:
-            fr["error"] = f"unexpected: {ex}"
-            fr["trace"] = traceback.format_exc()
-            log_exc(f"test {case['id']}")
-        res["frames"].append(fr)
-    return res
-
-
-def check_case(case, settings, res, ctx):
-    """PASS / WARN / FAIL with reasons and metrics for one case x combo."""
-    exp = case["expect"]
-    fails, warns = [], []
-    if not case["built"]:
-        fails.append("test input could not be built")
-    for k, why in res["skips"].items():
-        fails.append(f"input skipped: {why}")
-    breps = [b for fr in res["frames"] for b in fr["breps"]]
-    errors = [fr["error"] for fr in res["frames"] if fr["error"]]
-    for e in errors:
-        fails.append(e)
-    framed = sum(1 for fr in res["frames"] if not fr["error"])
-    if exp["frames"] is not None and res["records"] != exp["frames"]:
-        fails.append(f"{res['records']} outline(s) found, expected {exp['frames']}")
-    invalid = sum(1 for b in breps if b is None or not b.IsValid)
-    if invalid:
-        fails.append(f"{invalid} invalid object(s)")
-    faces = [b.Faces.Count for b in breps if b is not None]
-    solids = [b.IsSolid for b in breps if b is not None]
-    if breps and not all(solids):
-        fails.append(f"{solids.count(False)} of {len(solids)} object(s) not closed")
-    want_pieces = exp["frames"] if settings.output == "Solid" else exp["members"]
-    if want_pieces is not None and not errors and len(breps) != want_pieces:
-        warns.append(f"{len(breps)} piece(s), expected {want_pieces}")
-    if exp["sides"] and not errors and faces:
-        if settings.output == "Solid":
-            want = 2 * exp["sides"] + 2                       # one clean solid: walls + front + back
-            bad = sum(1 for f in faces if f != want)
-        else:
-            want = 6                                          # straight member
-            bad = sum(1 for f in faces if f != want)
-        if bad:
-            warns.append(f"{bad} piece(s) without {want} faces (extra or missing edges)")
-    vol = None
-    if breps and all(solids):
-        vols = [_volume(b) for b in breps]
-        if None not in vols:
-            vol = sum(vols)
-            length = sum(fr["length"] for fr in res["frames"] if not fr["error"])
-            approx = length * TEST_WIDTH_MM * TEST_DEPTH_MM * ctx.scale ** 3
-            ratio = vol / approx if approx > 0 else 0
-            if not 0.5 <= ratio <= 1.5:
-                warns.append(f"volume ratio {ratio:.2f} vs length x width x depth")
-    notes = sorted({n for fr in res["frames"] for n in fr["notes"]})
-    for n in notes:
-        if "could not" in n or "instead of" in n or "failed" in n:
-            warns.append(n)
-    status = "FAIL" if fails else ("WARN" if warns else "PASS")
-    return {"status": status, "fails": fails, "warns": warns, "notes": notes, "objects": len(breps),
-            "framed": framed, "faces": faces, "volume": vol,
-            "traces": [fr["trace"] for fr in res["frames"] if fr["trace"]]}
-
-
-# =============================================================================
 # UI
 # =============================================================================
 class _Report:
@@ -1834,8 +1601,6 @@ def _label(text, muted=False, bold=False, tip=None):
     return lb
 
 
-
-
 def _stepper(value):
     s = forms.NumericStepper()
     s.DecimalPlaces = 1
@@ -1847,8 +1612,6 @@ def _stepper(value):
     s.TextColor = color("text")
     s.BackgroundColor = color("bg_panel")
     return s
-
-
 
 
 # ---- custom-drawn controls -----------------------------------------------------
@@ -2059,8 +1822,6 @@ def _hrow(*items):
     return t
 
 
-
-
 class WindowFrameUI:
     def __init__(self):
         self.version = __version__
@@ -2125,10 +1886,6 @@ class WindowFrameUI:
         self.lbl_count = _label("0 objects", muted=True)
         self.chk_join = Toggle("Close open outlines", True)
         self.chk_join.CheckedChanged += self._safe("Join", self.on_setting("Close open outlines", lambda: self.chk_join.Checked))
-        self.btn_test = FlatButton("Test set-1", "Build the set-1 test inputs on layer " + TEST_LAYER +
-                                   ", run all 27 option combinations on each, check the results "
-                                   "and write logs\\TEST_<date>.json. One Ctrl+Z undoes it.")
-        self.btn_test.Click += self._safe("Test", self.on_test)
 
         self.st_side = _stepper(DEFAULT_WIDTH_MM)
         self.st_top = _stepper(DEFAULT_WIDTH_MM)
@@ -2210,7 +1967,7 @@ class WindowFrameUI:
         add(_hrow(self.btn_run, self.btn_cancel, (None, True)))
         add(_label("Report", bold=True, tip="Short result of the last action. Full detail is in the log."))
         add(self.report.area, scale_height=True)
-        add(_hrow(self.btn_log, self.btn_test, (None, True)))
+        add(_hrow(self.btn_log, (None, True)))
 
         f.Content = main
         f.Closed += self._safe("Closed", self.on_closed)
@@ -2551,181 +2308,6 @@ class WindowFrameUI:
             self.report.add("Failed inputs are now selected.", "text_muted")
         for nt in sorted(set(notes + ([layer_note] if layer_note and created else []))):
             self.report.add(f"Note: {nt}", "warning")
-
-    # ---- test (set-1) ----
-    def _test_layer(self):
-        idx = sc.doc.Layers.FindByFullPath(TEST_LAYER, -1)
-        if idx < 0:
-            lay = rdo.Layer()
-            lay.Name = TEST_LAYER
-            idx = sc.doc.Layers.Add(lay)
-            log("API", f"Layers.Add({TEST_LAYER}) -> {idx}")
-        layer = sc.doc.Layers[idx]
-        prev = list(sc.doc.Objects.FindByLayer(layer) or [])
-        return idx, layer, prev
-
-    def _add_test(self, geom, layer_idx, name, rgb=None, group_idx=-1):
-        attrs = sc.doc.CreateDefaultAttributes()
-        attrs.LayerIndex = layer_idx
-        attrs.Name = name
-        if group_idx >= 0:
-            attrs.AddToGroup(group_idx)
-        if rgb is not None:
-            attrs.ColorSource = rdo.ObjectColorSource.ColorFromObject
-            attrs.ObjectColor = System.Drawing.Color.FromArgb(*rgb)
-        if isinstance(geom, rg.TextDot):
-            return sc.doc.Objects.AddTextDot(geom, attrs)
-        return sc.doc.Objects.Add(geom, attrs)
-
-    def on_test(self, sender, e):
-        if self.running:
-            return
-        log("TEST", "Test set-1 clicked")
-        undo_sn = 0
-        layer_idx, layer, prev = self._test_layer()
-        if not layer.IsVisible or layer.IsLocked:
-            self.report.add(f"Layer {TEST_LAYER} is hidden or locked: show/unlock it, then click Test again.", "warning")
-            return
-        keep_prev = False
-        if prev:
-            r = Rhino.UI.Dialogs.ShowMessage(
-                f"{len(prev)} object(s) from a previous test are on layer {TEST_LAYER}.\n\n"
-                "Yes: delete them, then test\nNo: keep them (new grid below)\nCancel: stop",
-                PLUGIN_NAME, Rhino.UI.ShowMessageButton.YesNoCancel, Rhino.UI.ShowMessageIcon.Question)
-            log("TEST", f"previous test objects={len(prev)} answer={r}")
-            if r == Rhino.UI.ShowMessageResult.Cancel:
-                return
-            keep_prev = (r == Rhino.UI.ShowMessageResult.No)
-        doc = sc.doc
-        scale = Rhino.RhinoMath.UnitScale(Rhino.UnitSystem.Millimeters, doc.ModelUnitSystem)
-        ctx = RunContext(tol=doc.ModelAbsoluteTolerance, ang_tol=doc.ModelAngleToleranceRadians, scale=scale)
-        cell = TEST_CELL * scale
-        combos = test_combos()
-        self.report.clear()
-        self.running = True
-        self.cancel_requested = False
-        self.btn_run.Enabled = False
-        self.btn_test.Enabled = False
-        self.btn_cancel.Enabled = True
-        t_start = time.time()
-        rows = []
-        cancelled = False
-        doc.Views.RedrawEnabled = False
-        esc_hooked = False
-        try:
-            Rhino.RhinoApp.EscapeKeyPressed += self._esc_handler
-            esc_hooked = True
-        except Exception:
-            log_exc("hook Escape")
-        try:
-            undo_sn = doc.BeginUndoRecord(f"{PLUGIN_NAME} Test")
-            log("UNDO", f"begin sn={undo_sn}")
-            if prev and not keep_prev:
-                n_del = sum(1 for o in prev if doc.Objects.Delete(o.Id, True))
-                log("TEST", f"deleted {n_del} previous test object(s) (confirmed)")
-            cases = build_set1(ctx.tol)
-            if keep_prev:
-                bb = bbox_of([o.Geometry for o in prev if o.Geometry is not None])
-                origin = rg.Point3d(bb.Min.X, bb.Min.Y - 2 * cell, 0) if bb else rg.Point3d(0, 0, 0)
-            else:
-                dbb = doc.Objects.BoundingBox
-                origin = rg.Point3d(dbb.Max.X + 5000 * scale, dbb.Max.Y, 0) if dbb.IsValid else rg.Point3d(0, 0, 0)
-            log("TEST", f"{len(cases)} case(s) x {len(combos)} combos, grid origin {origin}, cell {cell}")
-            for c, (wm, om, dm) in enumerate(combos):
-                self._add_test(rg.TextDot(f"{wm}/{om}/{dm}", rg.Point3d(origin.X + (c + 1) * cell, origin.Y + cell * 0.6, 0)),
-                               layer_idx, "header")
-            total = len(cases) * len(combos)
-            self._progress("show", total)
-            done = 0
-            for r_i, case in enumerate(cases):
-                base = rg.Point3d(origin.X, origin.Y - r_i * cell, 0)
-                bb = bbox_of(case["geoms"])
-                move = rg.Vector3d(base.X - bb.Min.X, base.Y - bb.Min.Y, -bb.Min.Z) if bb else rg.Vector3d(0, 0, 0)
-                for g in case["geoms"]:
-                    g.Translate(move)
-                    self._add_test(g, layer_idx, f"set-1 #{case['id']} input")
-                self._add_test(rg.TextDot(f"#{case['id']} {case['name']}", rg.Point3d(base.X, base.Y - 0.12 * cell, 0)),
-                               layer_idx, "label")
-                for c, (wm, om, dm) in enumerate(combos):
-                    if self._cancelled():
-                        cancelled = True
-                        break
-                    done += 1
-                    self._progress("update", done)
-                    st = Settings(width_side=TEST_WIDTH_MM, width_top=TEST_WIDTH_MM, width_bottom=TEST_WIDTH_MM,
-                                  link=True, width_mode=wm, depth=TEST_DEPTH_MM, depth_mode=dm, output=om,
-                                  close_open=case["join"])
-                    log("TEST", f"=== #{case['id']} {case['name']} | {wm}/{om}/{dm} ===")
-                    t0 = time.time()
-                    res = run_case(case, st, ctx)
-                    chk = check_case(case, st, res, ctx)
-                    ms = (time.time() - t0) * 1000.0
-                    log("TEST", f"#{case['id']} {wm}/{om}/{dm} -> {chk['status']} objects={chk['objects']} "
-                                f"fails={chk['fails']} warns={chk['warns']} ({ms:.0f} ms)")
-                    shift = rg.Vector3d((c + 1) * cell, 0, 0)
-                    rgb = {"PASS": (78, 154, 81), "WARN": (200, 145, 47), "FAIL": (217, 83, 79)}[chk["status"]]
-                    for fr in res["frames"]:
-                        gidx = sc.doc.Groups.Add() if len(fr["breps"]) > 1 else -1
-                        for b in fr["breps"]:
-                            if b is not None and b.IsValid:
-                                b.Translate(shift)
-                                self._add_test(b, layer_idx, f"#{case['id']} {wm}/{om}/{dm} {chk['status']}", rgb, gidx)
-                    if chk["status"] != "PASS":
-                        why = (chk["fails"] + chk["warns"])[0]
-                        self._add_test(rg.TextDot(f"{chk['status']}: {why[:48]}",
-                                                  rg.Point3d(base.X + (c + 1) * cell, base.Y - 0.2 * cell, 0)),
-                                       layer_idx, "status", rgb)
-                    rows.append({"case": case["id"], "name": case["name"], "offset": wm, "output": om, "depth": dm,
-                                 "status": chk["status"], "fails": chk["fails"], "warns": chk["warns"],
-                                 "notes": chk["notes"], "objects": chk["objects"], "faces": chk["faces"],
-                                 "volume": chk["volume"], "expect": case["expect"], "ms": round(ms, 1),
-                                 "traces": chk["traces"]})
-                if cancelled:
-                    break
-        finally:
-            if esc_hooked:
-                try:
-                    Rhino.RhinoApp.EscapeKeyPressed -= self._esc_handler
-                except Exception:
-                    log_exc("unhook Escape")
-            if undo_sn:
-                doc.EndUndoRecord(undo_sn)
-                log("UNDO", f"end sn={undo_sn}")
-            self._progress("hide")
-            doc.Views.RedrawEnabled = True
-            self.running = False
-            self.btn_run.Enabled = True
-            self.btn_test.Enabled = True
-            self.btn_cancel.Enabled = False
-        doc.Views.Redraw()
-        dur = time.time() - t_start
-        counts = {k: sum(1 for r in rows if r["status"] == k) for k in ("PASS", "WARN", "FAIL")}
-        by_case = {}
-        for r in rows:
-            d = by_case.setdefault(r["case"], {"PASS": 0, "WARN": 0, "FAIL": 0})
-            d[r["status"]] += 1
-        stamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        path = os.path.join(LOG_DIR, f"TEST_{stamp}.json")
-        try:
-            os.makedirs(LOG_DIR, exist_ok=True)
-            with open(path, "w", encoding="utf-8") as fh:
-                json.dump({"plugin": PLUGIN_NAME, "version": __version__, "rhino": str(Rhino.RhinoApp.Version),
-                           "units": str(doc.ModelUnitSystem), "tol": ctx.tol, "duration_s": round(dur, 2),
-                           "cancelled": cancelled, "summary": counts, "by_case": by_case,
-                           "log_file": _log_path, "rows": rows}, fh, indent=1)
-            log("TEST", f"json written: {path}")
-        except Exception:
-            log_exc("write test json")
-        log("DONE", f"test: {len(rows)} run(s) {counts} cancelled={cancelled} in {dur:.1f} s")
-        self.report.add(f"Test set-1: {len(rows)} runs - {counts['PASS']} pass, {counts['WARN']} warn, "
-                        f"{counts['FAIL']} fail ({dur:.1f} s)",
-                        "success" if not counts["FAIL"] and not counts["WARN"] else ("error" if counts["FAIL"] else "warning"))
-        for cid, d in by_case.items():
-            if d["FAIL"] or d["WARN"]:
-                self.report.add(f"  #{cid}: {d['FAIL']} fail, {d['WARN']} warn", "error" if d["FAIL"] else "warning")
-        if cancelled:
-            self.report.add("Cancelled: partial results kept.", "warning")
-        self.report.add(f"Details: logs\\TEST_{stamp}.json (layer {TEST_LAYER})", "text_muted")
 
 
 # =============================================================================

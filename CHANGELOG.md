@@ -8,7 +8,6 @@ First public release on GitHub.
 - Outputs: Solid, Mitered 45, Mitered 90. Offset: Inside / Outside / Center. Depth direction: Front / Back / Center.
 - Separate side / top / bottom widths (or one linked value).
 - Grouping options, single-step undo, inputs never modified.
-- Built-in `Test set-1` (20 inputs x 27 combinations) with colour-coded results.
 - Per-session log files for diagnosing problems.
 
 ## [1.0] to [1.10] - 2026-10-15 to 2026-10-16

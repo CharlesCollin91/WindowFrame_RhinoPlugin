@@ -4,11 +4,11 @@ This page explains how `WindowFrame_CC.py` is built, so that someone else can ta
 
 ## Design decisions
 
-- **One single file.** Everything (logging, theme, geometry, test harness, window) lives in `WindowFrame_CC.py`. There are no local imports and no external packages. This makes the plugin trivial to install (copy one file) and to share.
+- **One single file.** Everything (logging, theme, geometry, window) lives in `WindowFrame_CC.py`. There are no local imports and no external packages. This makes the plugin trivial to install (copy one file) and to share.
 - **`#! python 3` on line 1.** Without it Rhino's `_RunPythonScript` starts IronPython 2.7 instead of the Python 3 of Rhino 8.
 - **Python 3.9 syntax only** (no `match`, no `X | Y` type hints), the safe level for Rhino 8.
 - **RhinoCommon, not `rhinoscriptsyntax`.** Geometry is built with `Rhino.Geometry` objects directly.
-- **Geometry and window are kept apart.** The `CORE` code never touches the window, so it can be tested and logged on its own (the built-in test relies on this).
+- **Geometry and window are kept apart.** The `CORE` code never touches the window, so the geometry logic can be read, changed and logged on its own.
 - **Refuse rather than succeed in the wrong place.** If a frame cannot be built reliably, that outline is skipped and the reason is reported, instead of producing wrong geometry.
 
 ## File layout
@@ -22,7 +22,6 @@ The file is divided into banner-commented sections, in this order:
 | `LOGGING` | One log file per window session in `logs/`, capped at 500 MB in total (oldest files removed first). `log(tag, msg)` and `log_exc(where)` never raise, so logging cannot break a run. |
 | `THEME` | Colour and font tokens (`TOKENS`, `color()`, `font()`) used by the window. |
 | `CORE` | All the geometry logic (below). Starts with `Settings` and `RunContext`, small vector helpers, then the pipeline functions. |
-| `TEST` | The built-in test: reference inputs (`build_set1`), the option sweep (`test_combos`), and the automatic checks (`run_case`, `check_case`). |
 | `UI` | The Eto window: small widget classes (`FlatButton`, `OptionGroup`, `Toggle`, ...) and `WindowFrameUI`, which owns the window, reads the settings, and runs the pipeline on Run. |
 | `ENTRY POINT` | `main()`: checks Rhino 8+ / Python 3, keeps a single window instance (stored in `scriptcontext.sticky`), and shows it. |
 
@@ -69,15 +68,9 @@ Key ideas inside the steps:
 - **Depth** (`depth_range`): Front / Back / Center decide where the extrusion starts relative to the outline plane. "Front" follows the active camera, falling back to a world rule when the camera is edge-on (`RunContext.cam_dir`, `CAMERA_DOT_MIN`).
 - **Closing a solid** (`_close_solid`, `_log_naked`): joins faces into a closed brep and logs naked edges when it cannot.
 
-## The built-in test
-
-`build_set1` creates 20 reference inputs (different curves, surfaces, meshes, ...). `test_combos` lists the 27 combinations of Offset x Output x Depth. `run_case` runs one input with one combination through the same pipeline as the real Run, and `check_case` marks it PASS / WARN / FAIL (valid, closed, expected member count, face count, plausible volume). The UI lays the results out in a coloured grid on layer `WindowFrame_CC_TEST` and writes `logs/TEST_<date>.json`.
-
-When you change the geometry code, run `Test set-1` before and after: the grid shows immediately what you improved or broke.
-
 ## Logs
 
-Every window session writes `logs/WindowFrame_CC_<date>_<time>.log`. Lines look like `TAG | message` with tags such as `ITEM` (what is happening to an outline), `API` (result of a RhinoCommon call), `SKIP`, `ERROR`, `TEST`. When reporting a bug, attach the matching log.
+Every window session writes `logs/WindowFrame_CC_<date>_<time>.log`. Lines look like `TAG | message` with tags such as `ITEM` (what is happening to an outline), `API` (result of a RhinoCommon call), `SKIP`, `ERROR`. When reporting a bug, attach the matching log.
 
 ## Where to start if you want to...
 
