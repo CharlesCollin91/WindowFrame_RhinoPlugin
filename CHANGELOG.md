@@ -1,6 +1,10 @@
 # Changelog
 
-All notable changes to WindowFrame_CC. Format inspired by [Keep a Changelog](https://keepachangelog.com/); versions follow the plugin's own numbering (1.0, 1.1, ... 1.11).
+All notable changes to WindowFrame_CC. Format inspired by [Keep a Changelog](https://keepachangelog.com/); versions follow the plugin's own numbering (1.0, 1.1, ... 1.12).
+
+## [1.12] - 2026-10-16
+No functional change since 1.11.
+- Screenshots added to the README.
 
 ## [1.11] - 2026-10-16
 First public release on GitHub.

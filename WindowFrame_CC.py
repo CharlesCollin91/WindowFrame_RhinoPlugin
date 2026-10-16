@@ -3,7 +3,7 @@
 # Requires: Rhino 8+ (Windows), Python 3 (built into Rhino 8). No extra packages.
 # Run: ! _-RunPythonScript "C:\path\to\WindowFrame_CC\WindowFrame_CC.py"
 # Copyright (C) 2026 Charles Collin. Licensed under GPL-3.0-or-later (see LICENSE).
-__version__ = "1.11"
+__version__ = "1.12"
 
 # =============================================================================
 # HEADER / IMPORTS

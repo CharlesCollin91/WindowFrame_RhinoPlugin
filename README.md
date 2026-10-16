@@ -4,7 +4,12 @@
 
 A Rhino 8 Python script that builds a rectangular-section **window frame** along the outer edge of any selected geometry (curves, surfaces, polysurfaces, meshes, SubD, hatches). It opens a small floating window: select geometry, set the widths, press **Run**. One Ctrl+Z undoes a run, and your input objects are never modified.
 
-Version **1.11** · License: [GPL-3.0-or-later](LICENSE) · Code walkthrough: [ARCHITECTURE.md](ARCHITECTURE.md)
+![Input outlines (black) and the generated window frames (green) in the Rhino viewport](pictures/1235.JPG)
+
+Version **1.12** · License: [GPL-3.0-or-later](LICENSE) · Code walkthrough: [ARCHITECTURE.md](ARCHITECTURE.md)
+
+## Screenshots
+![The WindowFrame_CC window](pictures/window.jpg)
 
 ## Requirements
 Windows, Rhino 8 or later (built-in Python 3). No extra packages.
